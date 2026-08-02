@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Livro de Despesas</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --ink:#20291F;
+    --paper:#F7F2E6;
+    --paper-2:#EFE7D4;
+    --ledger:#2F5233;
+    --ledger-light:#3F6B44;
+    --rust:#B54834;
+    --gold:#C9A24B;
+    --muted:#8A8577;
+    --line: rgba(32,41,31,0.14);
+    --card-shadow: 0 1px 0 rgba(32,41,31,0.06), 0 6px 16px rgba(32,41,31,0.06);
+    --radius: 4px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height:100vh;
+  }
+  .display{
+    font-family: Georgia, 'Zilla Slab', 'Times New Roman', serif;
+    font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  .mono{
+    font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+    letter-spacing: 0.02em;
+  }
+  .app{
+    display:flex;
+    min-height:100vh;
+  }
+  /* ---------- SIDEBAR ---------- */
+  .sidebar{
+    width:250px;
+    flex-shrink:0;
+    background:var(--ink);
+    color:var(--paper);
+    padding:24px 18px;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+  }
+  .brand{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    padding-bottom:16px;
+    border-bottom:1px solid rgba(247,242,230,0.15);
+  }
+  .brand .eyebrow{
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.14em;
+    color:var(--gold);
+  }
+  .brand h1{
+    font-size:20px;
+    margin:2px 0 0 0;
+  }
+  .companies-label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.1em;
+    color:rgba(247,242,230,0.5);
+    margin-bottom:-6px;
+  }
+  .company-list{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+  }
+  .company-item{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    padding:9px 10px;
+    border-radius:var(--radius);
+    cursor:pointer;
+    font-size:14px;
+    color:rgba(247,242,230,0.85);
+    border:1px solid transparent;
+    transition: background .15s ease;
+  }
+  .company-item:hover{ background:rgba(247,242,230,0.06); }
+  .company-item.active{
+    background:rgba(247,242,230,0.1);
+    border-color:rgba(201,162,75,0.5);
+    color:var(--paper);
+  }
+  .company-item .del{
+    opacity:0;
+    color:rgba(247,242,230,0.4);
+    font-size:12px;
+    padding:2px 5px;
+  }
+  .company-item:hover .del{opacity:1;}
+  .company-item .del:hover{color:var(--rust);}
+  .add-company-btn{
+    margin-top:4px;
+    background:transparent;
+    border:1px dashed rgba(247,242,230,0.3);
+    color:rgba(247,242,230,0.7);
+    padding:9px 10px;
+    border-radius:var(--radius);
+    font-size:13px;
+    cursor:pointer;
+    text-align:left;
+  }
+  .add-company-btn:hover{ border-color:var(--gold); color:var(--gold); }
+  .sidebar-foot{
+    margin-top:auto;
+    font-size:11px;
+    color:rgba(247,242,230,0.35);
+    line-height:1.5;
+  }
+
+  /* ---------- MAIN ---------- */
+  .main{
+    flex:1;
+    padding:32px 40px 60px;
+    max-width:980px;
+  }
+  .main-header{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    margin-bottom:22px;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .main-header h2{
+    font-size:28px;
+    margin:0;
+  }
+  .main-header .sub{
+    color:var(--muted);
+    font-size:13px;
+    margin-top:4px;
+  }
+  .empty-state{
+    border:1px dashed var(--line);
+    border-radius:var(--radius);
+    padding:48px 24px;
+    text-align:center;
+    color:var(--muted);
+  }
+  .empty-state h3{
+    color:var(--ink);
+    font-size:17px;
+    margin:0 0 6px;
+  }
+  .tabs{
+    display:flex;
+    gap:2px;
+    margin-bottom:24px;
+    border-bottom:1px solid var(--line);
+  }
+  .tab{
+    padding:10px 4px;
+    margin-right:24px;
+    font-size:14px;
+    color:var(--muted);
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+    user-select:none;
+  }
+  .tab.active{
+    color:var(--ink);
+    border-bottom-color:var(--ledger);
+    font-weight:600;
+  }
+  .panel{ display:none; }
+  .panel.active{ display:block; }
+
+  /* forms */
+  .card{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--card-shadow);
+  }
+  .form-card{
+    padding:20px 22px;
+    margin-bottom:26px;
+  }
+  .form-card h3{
+    font-size:14px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:var(--muted);
+    margin:0 0 14px;
+  }
+  .form-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+  }
+  .field{ display:flex; flex-direction:column; gap:5px; }
+  .field.full{ grid-column:1 / -1; }
+  .field label{ font-size:12px; color:var(--muted); }
+  .field input, .field select, .field textarea{
+    font-family:inherit;
+    font-size:14px;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:var(--paper);
+    color:var(--ink);
+  }
+  .field textarea{ resize:vertical; min-height:56px; }
+  .field input:focus, .field select:focus, .field textarea:focus{
+    outline:none;
+    border-color:var(--ledger);
+    box-shadow:0 0 0 3px rgba(47,82,51,0.12);
+  }
+  .file-drop{
+    border:1px dashed var(--line);
+    border-radius:var(--radius);
+    padding:14px;
+    font-size:13px;
+    color:var(--muted);
+    display:flex;
+    align-items:center;
+    gap:10px;
+    cursor:pointer;
+    background:var(--paper);
+  }
+  .file-drop:hover{ border-color:var(--gold); }
+  .file-drop img{ height:40px; border-radius:3px; }
+  .btn{
+    font-family:inherit;
+    font-size:13.5px;
+    font-weight:600;
+    padding:10px 18px;
+    border-radius:var(--radius);
+    border:none;
+    cursor:pointer;
+    background:var(--ledger);
+    color:#fff;
+    margin-top:14px;
+  }
+  .btn:hover{ background:var(--ledger-light); }
+  .btn.secondary{
+    background:transparent;
+    color:var(--ink);
+    border:1px solid var(--line);
+  }
+  .btn.secondary:hover{ border-color:var(--ink); }
+
+  /* fornecedores list */
+  .supplier-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(230px,1fr));
+    gap:14px;
+  }
+  .supplier-card{
+    padding:16px;
+    position:relative;
+  }
+  .supplier-card .cat{
+    display:inline-block;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:var(--ledger);
+    background:rgba(47,82,51,0.08);
+    padding:2px 7px;
+    border-radius:2px;
+    margin-bottom:8px;
+  }
+  .supplier-card h4{ margin:0 0 4px; font-size:15.5px; }
+  .supplier-card p{ margin:0; font-size:13px; color:var(--muted); line-height:1.5; }
+  .supplier-card .phone{ margin-top:8px; font-size:12.5px; color:var(--ink); }
+  .supplier-card .del{
+    position:absolute; top:12px; right:12px;
+    font-size:12px; color:var(--muted); cursor:pointer;
+  }
+  .supplier-card .del:hover{ color:var(--rust); }
+  .supplier-card .edit{
+    position:absolute; top:12px; right:32px;
+    font-size:12px; color:var(--muted); cursor:pointer;
+  }
+  .supplier-card .edit:hover{ color:var(--ledger); }
+
+  /* notas / invoices */
+  .invoice-list{ display:flex; flex-direction:column; gap:12px; }
+  .invoice-card{
+    padding:14px 16px;
+    display:flex;
+    align-items:center;
+    gap:16px;
+    position:relative;
+    overflow:hidden;
+  }
+  .invoice-thumb{
+    width:52px;height:52px;border-radius:3px;object-fit:cover;flex-shrink:0;
+    border:1px solid var(--line);
+    background:var(--paper-2);
+  }
+  .invoice-thumb.placeholder{
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;color:var(--muted);text-align:center;
+  }
+  .invoice-main{ flex:1; min-width:0; }
+  .invoice-main .top-row{ display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .invoice-main h4{ margin:0; font-size:15px; }
+  .invoice-main .valor{ font-size:15px; font-weight:700; }
+  .invoice-main .meta{ font-size:12.5px; color:var(--muted); margin-top:3px; }
+  .invoice-main .desc{ font-size:13px; color:var(--ink); margin-top:5px; }
+  .stamp{
+    font-family: Georgia, serif;
+    font-weight:700;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    border:2px solid;
+    border-radius:3px;
+    padding:3px 8px;
+    transform: rotate(-4deg);
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .stamp.registrada{ color:var(--ledger); border-color:var(--ledger); }
+  .stamp.pendente{ color:var(--rust); border-color:var(--rust); }
+  .invoice-card .del{
+    position:absolute; top:10px; right:10px;
+    font-size:12px; color:var(--muted); cursor:pointer;
+  }
+  .invoice-card .del:hover{ color:var(--rust); }
+  .invoice-card .edit{
+    position:absolute; top:10px; right:30px;
+    font-size:12px; color:var(--muted); cursor:pointer;
+  }
+  .invoice-card .edit:hover{ color:var(--ledger); }
+  .form-card .cancel-edit{
+    font-size:12.5px; color:var(--muted); cursor:pointer; margin-left:12px;
+  }
+  .form-card .cancel-edit:hover{ color:var(--rust); }
+
+  .totals-bar{
+    display:flex; gap:24px; margin-bottom:18px;
+    font-size:13px; color:var(--muted);
+  }
+  .totals-bar b{ color:var(--ink); font-size:15px; }
+
+  /* relatórios */
+  .filter-row{
+    display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;
+    margin-bottom:20px;
+  }
+  .filter-row .field{ min-width:150px; }
+  .summary-cards{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:12px; margin-bottom:26px;
+  }
+  .summary-card{
+    padding:16px; text-align:left;
+  }
+  .summary-card .label{ font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:6px; }
+  .summary-card .value{ font-size:22px; font-weight:700; }
+  .breakdown-title{
+    font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted);
+    margin:26px 0 12px;
+  }
+  .bar-row{
+    display:flex; align-items:center; gap:12px; padding:8px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .bar-row .bar-label{ width:150px; flex-shrink:0; font-size:13px; }
+  .bar-row .bar-track{
+    flex:1; height:9px; background:var(--paper-2); border-radius:5px; overflow:hidden;
+  }
+  .bar-row .bar-fill{ height:100%; background:var(--ledger); border-radius:5px; }
+  .bar-row .bar-value{ width:100px; text-align:right; font-size:13px; flex-shrink:0; }
+
+  .overview-grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:16px; margin-bottom:30px;
+  }
+  .overview-card{
+    padding:20px;
+  }
+  .overview-card h4{ margin:0 0 10px; font-size:16px; }
+  .overview-card .big{ font-size:26px; font-weight:700; }
+  .overview-card .small{ font-size:12.5px; color:var(--muted); margin-top:4px; }
+  .compare-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
+  .compare-table th{
+    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--line);
+  }
+  .compare-table td{ padding:10px 10px; border-bottom:1px solid var(--line); }
+  .compare-table tr:last-child td{ border-bottom:none; }
+
+  /* login */
+  .login-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:var(--ink);
+  }
+  .login-box{
+    background:var(--paper); border-radius:6px; padding:36px 34px;
+    width:320px; box-shadow:0 20px 50px rgba(0,0,0,0.35);
+  }
+  .login-box .eyebrow{
+    font-size:10.5px; text-transform:uppercase; letter-spacing:0.14em; color:var(--gold);
+  }
+  .login-box h1{ font-size:22px; margin:2px 0 22px; }
+  .login-box label{ font-size:12px; color:var(--muted); display:block; margin-bottom:6px; }
+  .login-box input{
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius);
+    font-size:14px; font-family:inherit; margin-bottom:10px; background:#fff;
+  }
+  .login-box input:focus{ outline:none; border-color:var(--ledger); box-shadow:0 0 0 3px rgba(47,82,51,0.12); }
+  .login-box .btn{ width:100%; margin-top:6px; }
+  .login-error{ font-size:12.5px; color:var(--rust); margin:-2px 0 8px; min-height:16px; }
+  .logout-btn{
+    font-size:11.5px; color:rgba(247,242,230,0.5); cursor:pointer; margin-top:8px;
+  }
+  .logout-btn:hover{ color:var(--rust); }
+
+  .pie-grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    gap:16px; margin-bottom:30px;
+  }
+  .pie-card{
+    padding:20px; display:flex; align-items:center; gap:20px;
+  }
+  .pie-card .pie{
+    width:110px; height:110px; border-radius:50%; flex-shrink:0;
+    box-shadow: inset 0 0 0 1px rgba(32,41,31,0.08);
+  }
+  .pie-card .pie-info{ flex:1; min-width:0; }
+  .pie-card h4{ margin:0 0 8px; font-size:15px; }
+  .pie-legend{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; }
+  .pie-legend .dot{ width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; }
+  .pie-legend .result-line{ margin-top:6px; font-size:13px; font-weight:700; }
+
+  .modal-bg{
+    position:fixed; inset:0; background:rgba(32,41,31,0.4);
+    display:flex; align-items:center; justify-content:center;
+    z-index:50;
+  }
+  .modal{
+    background:#fff; border-radius:var(--radius); padding:22px 24px;
+    width:320px;
+  }
+  .modal h3{ margin:0 0 12px; font-size:16px; }
+  .modal input{
+    width:100%; padding:9px 10px; border:1px solid var(--line);
+    border-radius:var(--radius); font-size:14px; margin-bottom:12px;
+    font-family:inherit;
+  }
+  .modal-actions{ display:flex; gap:8px; justify-content:flex-end; }
+
+  @media (max-width:760px){
+    .app{ flex-direction:column; }
+    .sidebar{ width:100%; flex-direction:row; overflow-x:auto; align-items:center; padding:14px 16px;}
+    .brand{ border:none; padding:0; }
+    .sidebar-foot{ display:none; }
+    .company-list{ flex-direction:row; }
+    .companies-label{ display:none; }
+    .main{ padding:22px 16px 60px; }
+    .form-grid{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <span class="eyebrow">Controle Financeiro</span>
+    <h1 class="display">Livro de Despesas</h1>
+    <label for="login-pass">Senha de acesso</label>
+    <input type="password" id="login-pass" placeholder="Digite a senha">
+    <div class="login-error" id="loginError"></div>
+    <button class="btn" id="login-btn">Entrar</button>
+  </div>
+</div>
+<div class="app" id="appRoot" style="display:none;">
+  <div class="sidebar">
+    <div class="brand">
+      <span class="eyebrow">Controle Financeiro</span>
+      <h1 class="display">Livro de Despesas</h1>
+    </div>
+    <div class="company-list" id="overviewItem" style="margin-bottom:2px;"></div>
+    <div class="companies-label">Empresas</div>
+    <div class="company-list" id="companyList"></div>
+    <button class="add-company-btn" id="addCompanyBtn">+ Nova empresa</button>
+    <div class="sidebar-foot">Cada empresa tem seus próprios fornecedores e despesas. Os dados ficam salvos automaticamente neste navegador.<br><span class="logout-btn" id="logoutBtn">Sair</span></div>
+  </div>
+
+  <div class="main" id="mainArea"></div>
+</div>
+
+<script>
+/* ======= SENHA DE ACESSO =======
+   Troque o valor abaixo antes de publicar o site. */
+const APP_PASSWORD = 'lanchonete2024';
+
+/* ======= CONFIGURAÇÃO DO FIREBASE =======
+   Cole aqui os dados do SEU projeto Firebase (Configurações do projeto >
+   Seus apps > ícone </> > "Config"). Sem isso o sistema não salva nada. */
+const firebaseConfig = {
+  apiKey: "AIzaSyDznV0TCJVMOhcKiXASyNyuAZhczoO2r8Y",
+  authDomain: "despesas-lanchonetes.firebaseapp.com",
+  projectId: "despesas-lanchonetes",
+  storageBucket: "despesas-lanchonetes.firebasestorage.app",
+  messagingSenderId: "980667067504",
+  appId: "1:980667067504:web:bcbe732f56262b358e58b5",
+  measurementId: "G-Z5LJS2LLXZ"
+};
+
+const DOC_COLLECTION = 'lanchonetes-app';
+const DOC_ID = 'shared-state';
+let db = null;
+
+async function initFirebase(){
+  if(firebaseConfig.apiKey === 'COLE_AQUI'){
+    document.getElementById('appRoot').style.display = 'block';
+    document.getElementById('appRoot').innerHTML = `
+      <div style="padding:48px;max-width:560px;font-family:sans-serif;line-height:1.6;">
+        <h2>Firebase ainda não configurado</h2>
+        <p>Preencha o objeto <code>firebaseConfig</code> no início do código com os dados do seu projeto Firebase para o sistema funcionar e salvar os dados na nuvem.</p>
+      </div>`;
+    return false;
+  }
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    await firebase.auth().signInAnonymously();
+    return true;
+  }catch(e){
+    console.error('Erro ao iniciar Firebase', e);
+    document.getElementById('appRoot').style.display = 'block';
+    document.getElementById('appRoot').innerHTML = `
+      <div style="padding:48px;max-width:560px;font-family:sans-serif;line-height:1.6;">
+        <h2>Não foi possível conectar ao Firebase</h2>
+        <p>Verifique se o "Authentication > Anonymous" está ativado e se os dados em <code>firebaseConfig</code> estão corretos.</p>
+        <p style="color:#888;font-size:13px;">Detalhe técnico: ${escapeForDisplay(String(e.message||e))}</p>
+      </div>`;
+    return false;
+  }
+}
+function escapeForDisplay(s){ return s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function checkLogin(){
+  const pass = document.getElementById('login-pass').value;
+  if(pass === APP_PASSWORD){
+    localStorage.setItem('despesas-app-authed', 'true');
+    showApp();
+  } else {
+    document.getElementById('loginError').textContent = 'Senha incorreta. Tente novamente.';
+  }
+}
+
+async function showApp(){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'flex';
+  const ok = await initFirebase();
+  if(ok) loadState();
+}
+
+document.getElementById('login-btn').onclick = checkLogin;
+document.getElementById('login-pass').addEventListener('keydown', e=>{
+  if(e.key==='Enter') checkLogin();
+});
+document.getElementById('logoutBtn').onclick = ()=>{
+  if(confirm('Sair do sistema?')){
+    localStorage.removeItem('despesas-app-authed');
+    location.reload();
+  }
+};
+
+if(localStorage.getItem('despesas-app-authed')==='true'){
+  showApp();
+} else {
+  document.getElementById('login-pass').focus();
+}
+
+let state = { companies: [], suppliersByCompany: {}, invoicesByCompany: {}, revenuesByCompany: {}, activeCompany: null };
+let activeTab = 'fornecedores';
+let loaded = false;
+let lastAddedSupplierId = null;
+let editingSupplierId = null;
+let editingInvoiceId = null;
+let editingRevenueId = null;
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function resetEditing(){ editingSupplierId=null; editingInvoiceId=null; editingRevenueId=null; }
+
+function loadState(){
+  db.collection(DOC_COLLECTION).doc(DOC_ID).onSnapshot(snap=>{
+    if(snap.exists && snap.data().json){
+      try{
+        const parsed = JSON.parse(snap.data().json);
+        state = Object.assign({ companies: [], suppliersByCompany: {}, invoicesByCompany: {}, revenuesByCompany: {}, activeCompany: null }, parsed);
+      }catch(e){ console.error('Erro ao ler dados salvos', e); }
+    }
+    loaded = true;
+    if(!state.activeCompany && state.companies.length){
+      state.activeCompany = state.companies[0].id;
+    }
+    render();
+  }, err=>{
+    console.error('Erro de conexão com o Firestore', err);
+  });
+}
+
+async function saveState(){
+  if(!db) return;
+  try{
+    await db.collection(DOC_COLLECTION).doc(DOC_ID).set({ json: JSON.stringify(state) });
+  }catch(e){
+    console.error('Falha ao salvar', e);
+    alert('Não foi possível salvar. Verifique sua conexão com a internet.');
+  }
+}
+
+function currentSuppliers(){
+  if(!state.activeCompany) return [];
+  return state.suppliersByCompany[state.activeCompany] || [];
+}
+function currentInvoices(){
+  if(!state.activeCompany) return [];
+  return state.invoicesByCompany[state.activeCompany] || [];
+}
+function currentRevenues(){
+  if(!state.activeCompany) return [];
+  return state.revenuesByCompany[state.activeCompany] || [];
+}
+
+function fmtBRL(n){
+  return (Number(n)||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+}
+function fmtDate(d){
+  if(!d) return '';
+  const [y,m,day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+
+/* ---------------- RENDER ---------------- */
+function render(){
+  renderSidebar();
+  renderMain();
+}
+
+function renderSidebar(){
+  const overviewEl = document.getElementById('overviewItem');
+  overviewEl.innerHTML = `<div class="company-item ${state.activeCompany==='ALL'?'active':''}" id="overviewBtn"><span>📊 Visão geral</span></div>`;
+  overviewEl.querySelector('#overviewBtn').onclick = ()=>{ state.activeCompany='ALL'; resetEditing(); saveState(); render(); };
+
+  const list = document.getElementById('companyList');
+  list.innerHTML = '';
+  state.companies.forEach(c=>{
+    const el = document.createElement('div');
+    el.className = 'company-item' + (c.id===state.activeCompany ? ' active':'');
+    el.innerHTML = `<span>${escapeHtml(c.name)}</span><span class="del" title="Remover empresa">✕</span>`;
+    el.querySelector('span:first-child').onclick = ()=>{ state.activeCompany = c.id; resetEditing(); saveState(); render(); };
+    el.querySelector('.del').onclick = (e)=>{
+      e.stopPropagation();
+      if(confirm(`Remover a empresa "${c.name}" e todos os seus dados?`)){
+        state.companies = state.companies.filter(x=>x.id!==c.id);
+        delete state.suppliersByCompany[c.id];
+        delete state.invoicesByCompany[c.id];
+        delete state.revenuesByCompany[c.id];
+        if(state.activeCompany===c.id){
+          state.activeCompany = state.companies[0]?.id || null;
+        }
+        saveState(); render();
+      }
+    };
+    list.appendChild(el);
+  });
+}
+
+document.getElementById('addCompanyBtn').onclick = ()=>{
+  openModal('Nova empresa', 'Nome da empresa (ex: Lanchonete Centro)', (name)=>{
+    if(!name.trim()) return;
+    const id = uid();
+    state.companies.push({id, name:name.trim()});
+    state.suppliersByCompany[id] = [];
+    state.invoicesByCompany[id] = [];
+    state.revenuesByCompany[id] = [];
+    state.activeCompany = id;
+    saveState(); render();
+  });
+};
+
+function openModal(title, placeholder, onSubmit){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${title}</h3>
+      <input type="text" placeholder="${placeholder}" id="modalInput">
+      <div class="modal-actions">
+        <button class="btn secondary" id="modalCancel">Cancelar</button>
+        <button class="btn" id="modalOk">Salvar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  const input = bg.querySelector('#modalInput');
+  input.focus();
+  bg.querySelector('#modalCancel').onclick = ()=> bg.remove();
+  bg.querySelector('#modalOk').onclick = ()=>{ onSubmit(input.value); bg.remove(); };
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ onSubmit(input.value); bg.remove(); }});
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function renderMain(){
+  const main = document.getElementById('mainArea');
+  if(!loaded){ main.innerHTML=''; return; }
+
+  if(state.activeCompany==='ALL'){
+    renderOverview(main);
+    return;
+  }
+
+  if(!state.activeCompany){
+    main.innerHTML = `
+      <div class="main-header">
+        <div><h2 class="display">Registro de Despesas</h2><div class="sub">Organize fornecedores e despesas por empresa</div></div>
+      </div>
+      <div class="empty-state">
+        <h3>Nenhuma empresa cadastrada</h3>
+        <p>Crie a primeira empresa na barra lateral para começar a cadastrar fornecedores e registrar despesas.</p>
+      </div>`;
+    return;
+  }
+
+  const company = state.companies.find(c=>c.id===state.activeCompany);
+  const suppliers = currentSuppliers();
+  const invoices = currentInvoices();
+  const revenues = currentRevenues();
+  const totalRegistrado = invoices.reduce((s,i)=>s+(Number(i.valor)||0),0);
+  const pendentes = invoices.filter(i=>i.status==='pendente').length;
+
+  main.innerHTML = `
+    <div class="main-header">
+      <div>
+        <h2 class="display">${escapeHtml(company.name)}</h2>
+        <div class="sub">${suppliers.length} fornecedor(es) · ${revenues.length} receita(s) · ${invoices.length} despesa(s) registrada(s)</div>
+      </div>
+    </div>
+    <div class="tabs">
+      <div class="tab ${activeTab==='fornecedores'?'active':''}" data-tab="fornecedores">Fornecedores</div>
+      <div class="tab ${activeTab==='receitas'?'active':''}" data-tab="receitas">Receitas</div>
+      <div class="tab ${activeTab==='notas'?'active':''}" data-tab="notas">Despesas</div>
+      <div class="tab ${activeTab==='relatorios'?'active':''}" data-tab="relatorios">Relatórios</div>
+    </div>
+    <div class="panel ${activeTab==='fornecedores'?'active':''}" id="panel-fornecedores"></div>
+    <div class="panel ${activeTab==='receitas'?'active':''}" id="panel-receitas"></div>
+    <div class="panel ${activeTab==='notas'?'active':''}" id="panel-notas"></div>
+    <div class="panel ${activeTab==='relatorios'?'active':''}" id="panel-relatorios"></div>
+  `;
+
+  main.querySelectorAll('.tab').forEach(t=>{
+    t.onclick = ()=>{ activeTab = t.dataset.tab; resetEditing(); render(); };
+  });
+
+  renderFornecedoresPanel(document.getElementById('panel-fornecedores'), suppliers);
+  renderReceitasPanel(document.getElementById('panel-receitas'), revenues);
+  renderNotasPanel(document.getElementById('panel-notas'), invoices, suppliers, totalRegistrado, pendentes);
+  if(activeTab==='relatorios'){
+    renderRelatoriosPanel(document.getElementById('panel-relatorios'), invoices, suppliers, revenues);
+  }
+}
+
+/* ---------------- FORNECEDORES ---------------- */
+function renderFornecedoresPanel(el, suppliers){
+  const editing = editingSupplierId ? suppliers.find(s=>s.id===editingSupplierId) : null;
+  el.innerHTML = `
+    <div class="card form-card">
+      <h3>${editing ? 'Editar fornecedor' : 'Cadastrar fornecedor'}</h3>
+      <div class="form-grid">
+        <div class="field"><label>Nome</label><input id="s-name" type="text" placeholder="Ex: Distribuidora Boa Fruta" value="${editing ? escapeHtml(editing.name) : ''}"></div>
+        <div class="field"><label>Categoria</label><input id="s-cat" type="text" placeholder="Ex: Hortifruti, Bebidas, Carnes..." value="${editing ? escapeHtml(editing.cat||'') : ''}"></div>
+        <div class="field"><label>Telefone / contato</label><input id="s-phone" type="text" placeholder="Ex: (94) 99999-0000" value="${editing ? escapeHtml(editing.phone||'') : ''}"></div>
+        <div class="field"><label>CNPJ (opcional)</label><input id="s-cnpj" type="text" placeholder="00.000.000/0000-00" value="${editing ? escapeHtml(editing.cnpj||'') : ''}"></div>
+        <div class="field full"><label>Descrição</label><textarea id="s-desc" placeholder="O que fornece, condições de pagamento, observações...">${editing ? escapeHtml(editing.desc||'') : ''}</textarea></div>
+      </div>
+      <button class="btn" id="s-save">${editing ? 'Salvar alterações' : 'Salvar fornecedor'}</button>
+      ${editing ? `<span class="cancel-edit" id="s-cancel">Cancelar edição</span>` : ''}
+    </div>
+    <div class="supplier-grid" id="supplierGrid"></div>
+  `;
+
+  const grid = el.querySelector('#supplierGrid');
+  if(suppliers.length===0){
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><h3>Nenhum fornecedor ainda</h3><p>Cadastre acima o primeiro fornecedor desta empresa.</p></div>`;
+  } else {
+    suppliers.slice().reverse().forEach(s=>{
+      const card = document.createElement('div');
+      card.className = 'card supplier-card';
+      card.innerHTML = `
+        <span class="edit" title="Editar">✎</span>
+        <span class="del" title="Excluir">✕</span>
+        ${s.cat ? `<span class="cat">${escapeHtml(s.cat)}</span>` : ''}
+        <h4>${escapeHtml(s.name)}</h4>
+        ${s.desc ? `<p>${escapeHtml(s.desc)}</p>` : ''}
+        ${s.phone ? `<div class="phone mono">${escapeHtml(s.phone)}</div>` : ''}
+      `;
+      card.querySelector('.edit').onclick = ()=>{
+        editingSupplierId = s.id;
+        render();
+      };
+      card.querySelector('.del').onclick = ()=>{
+        if(confirm(`Remover fornecedor "${s.name}"?`)){
+          state.suppliersByCompany[state.activeCompany] = currentSuppliers().filter(x=>x.id!==s.id);
+          if(editingSupplierId===s.id) editingSupplierId=null;
+          saveState(); render();
+        }
+      };
+      grid.appendChild(card);
+    });
+  }
+
+  el.querySelector('#s-save').onclick = ()=>{
+    const name = el.querySelector('#s-name').value.trim();
+    if(!name){ alert('Informe o nome do fornecedor.'); return; }
+    const data = {
+      name,
+      cat: el.querySelector('#s-cat').value.trim(),
+      phone: el.querySelector('#s-phone').value.trim(),
+      cnpj: el.querySelector('#s-cnpj').value.trim(),
+      desc: el.querySelector('#s-desc').value.trim(),
+    };
+    const list = state.suppliersByCompany[state.activeCompany] || (state.suppliersByCompany[state.activeCompany]=[]);
+    if(editing){
+      const idx = list.findIndex(x=>x.id===editing.id);
+      if(idx>-1){
+        list[idx] = Object.assign({}, list[idx], data);
+        // keep supplierName in sync on related despesas
+        (state.invoicesByCompany[state.activeCompany]||[]).forEach(inv=>{
+          if(inv.supplierId===editing.id) inv.supplierName = name;
+        });
+      }
+      editingSupplierId = null;
+    } else {
+      list.push(Object.assign({id: uid()}, data));
+    }
+    saveState(); render();
+  };
+
+  if(editing){
+    const cancelBtn = el.querySelector('#s-cancel');
+    if(cancelBtn) cancelBtn.onclick = ()=>{ editingSupplierId=null; render(); };
+  }
+}
+
+/* ---------------- RECEITAS ---------------- */
+function renderReceitasPanel(el, revenues){
+  const total = revenues.reduce((s,r)=>s+(Number(r.valor)||0),0);
+  const editing = editingRevenueId ? revenues.find(r=>r.id===editingRevenueId) : null;
+  el.innerHTML = `
+    <div class="totals-bar">
+      <div>Total de receitas<br><b>${fmtBRL(total)}</b></div>
+      <div>Registros<br><b>${revenues.length}</b></div>
+    </div>
+    <div class="card form-card">
+      <h3>${editing ? 'Editar receita' : 'Registrar receita diária'}</h3>
+      <div class="form-grid">
+        <div class="field"><label>Data</label><input id="r-data" type="date" value="${editing ? editing.data : ''}"></div>
+        <div class="field"><label>Valor (R$)</label><input id="r-valor" type="number" step="0.01" placeholder="0,00" value="${editing ? editing.valor : ''}"></div>
+        <div class="field full"><label>Observação (opcional)</label><input id="r-desc" type="text" placeholder="Ex: vendas do dia, delivery, evento..." value="${editing ? escapeHtml(editing.desc||'') : ''}"></div>
+      </div>
+      <button class="btn" id="r-save">${editing ? 'Salvar alterações' : 'Salvar receita'}</button>
+      ${editing ? `<span class="cancel-edit" id="r-cancel">Cancelar edição</span>` : ''}
+    </div>
+    <div class="invoice-list" id="revenueList"></div>
+  `;
+
+  el.querySelector('#r-save').onclick = async ()=>{
+    const data = el.querySelector('#r-data').value;
+    const valor = el.querySelector('#r-valor').value;
+    if(!data){ alert('Informe a data.'); return; }
+    if(!valor){ alert('Informe o valor da receita.'); return; }
+    const list = state.revenuesByCompany[state.activeCompany] || (state.revenuesByCompany[state.activeCompany]=[]);
+    const fields = { data, valor: Number(valor), desc: el.querySelector('#r-desc').value.trim() };
+    if(editing){
+      const idx = list.findIndex(x=>x.id===editing.id);
+      if(idx>-1) list[idx] = Object.assign({}, list[idx], fields);
+      editingRevenueId = null;
+    } else {
+      list.push(Object.assign({id: uid()}, fields));
+    }
+    await saveState();
+    render();
+  };
+
+  if(editing){
+    const cancelBtn = el.querySelector('#r-cancel');
+    if(cancelBtn) cancelBtn.onclick = ()=>{ editingRevenueId=null; render(); };
+  }
+
+  const list = el.querySelector('#revenueList');
+  if(revenues.length===0){
+    list.innerHTML = `<div class="empty-state"><h3>Nenhuma receita registrada</h3><p>Registre a receita do dia acima para começar o histórico desta empresa.</p></div>`;
+  } else {
+    revenues.slice().reverse().forEach(rv=>{
+      const card = document.createElement('div');
+      card.className = 'card invoice-card';
+      card.innerHTML = `
+        <span class="edit" title="Editar">✎</span>
+        <span class="del" title="Excluir">✕</span>
+        <div class="invoice-thumb placeholder">💰</div>
+        <div class="invoice-main">
+          <div class="top-row">
+            <h4>${fmtDate(rv.data)}</h4>
+            <span class="valor mono">${fmtBRL(rv.valor)}</span>
+          </div>
+          ${rv.desc ? `<div class="desc">${escapeHtml(rv.desc)}</div>` : ''}
+        </div>
+      `;
+      card.querySelector('.edit').onclick = ()=>{
+        editingRevenueId = rv.id;
+        render();
+      };
+      card.querySelector('.del').onclick = ()=>{
+        if(confirm('Remover esta receita?')){
+          state.revenuesByCompany[state.activeCompany] = currentRevenues().filter(x=>x.id!==rv.id);
+          if(editingRevenueId===rv.id) editingRevenueId=null;
+          saveState(); render();
+        }
+      };
+      list.appendChild(card);
+    });
+  }
+}
+
+/* ---------------- NOTAS ---------------- */
+function renderNotasPanel(el, invoices, suppliers, total, pendentes){
+  const options = suppliers.map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  const editing = editingInvoiceId ? invoices.find(i=>i.id===editingInvoiceId) : null;
+  el.innerHTML = `
+    <div class="totals-bar">
+      <div>Total registrado<br><b>${fmtBRL(total)}</b></div>
+      <div>Despesas pendentes<br><b>${pendentes}</b></div>
+      <div>Total de despesas<br><b>${invoices.length}</b></div>
+    </div>
+    <div class="card form-card">
+      <h3>${editing ? 'Editar despesa' : 'Registrar despesa'}</h3>
+      ${suppliers.length===0 ? `<p style="font-size:13px;color:var(--rust);margin:0 0 12px;">É necessário cadastrar um fornecedor antes de registrar uma despesa.</p>` : ''}
+      <div class="form-grid">
+        <div class="field"><label>Fornecedor *</label>
+          <select id="i-supplier" ${suppliers.length===0?'disabled':''}>${options || '<option value="">—</option>'}</select>
+          <span id="quickAddSupplier" style="font-size:12px;color:var(--ledger);cursor:pointer;margin-top:2px;">+ novo fornecedor</span>
+        </div>
+        <div class="field"><label>Valor (R$)</label><input id="i-valor" type="number" step="0.01" placeholder="0,00" value="${editing ? editing.valor : ''}"></div>
+        <div class="field"><label>Data</label><input id="i-data" type="date" value="${editing ? editing.data : ''}"></div>
+        <div class="field"><label>Status</label>
+          <select id="i-status">
+            <option value="pendente" ${editing && editing.status==='pendente' ? 'selected':''}>Pendente</option>
+            <option value="registrada" ${editing && editing.status==='registrada' ? 'selected':''}>Registrada</option>
+          </select>
+        </div>
+        <div class="field full"><label>Descrição da despesa</label><textarea id="i-desc" placeholder="Ex: 20kg de tomate, conta de energia, manutenção da geladeira, aluguel...">${editing ? escapeHtml(editing.desc||'') : ''}</textarea></div>
+        <div class="field full">
+          <label>Comprovante (opcional)</label>
+          <label class="file-drop" id="fileDrop">
+            <span id="fileDropText">${editing && editing.photo ? '✓ Comprovante já anexado (clique para trocar)' : 'Anexar foto — nota, lista de produtos ou comprovante de PIX (JPG/PNG, até ~4MB)'}</span>
+            <input type="file" id="i-photo" accept="image/*" style="display:none;">
+          </label>
+        </div>
+      </div>
+      <button class="btn" id="i-save" ${suppliers.length===0?'disabled':''}>${editing ? 'Salvar alterações' : 'Registrar despesa'}</button>
+      ${editing ? `<span class="cancel-edit" id="i-cancel">Cancelar edição</span>` : ''}
+    </div>
+    <div class="invoice-list" id="invoiceList"></div>
+  `;
+
+  el.querySelector('#quickAddSupplier').onclick = ()=>{
+    openModal('Novo fornecedor', 'Nome do fornecedor', async (name)=>{
+      if(!name.trim()) return;
+      const id = uid();
+      if(!state.suppliersByCompany[state.activeCompany]) state.suppliersByCompany[state.activeCompany]=[];
+      state.suppliersByCompany[state.activeCompany].push({id, name:name.trim(), cat:'', phone:'', cnpj:'', desc:''});
+      lastAddedSupplierId = id;
+      await saveState();
+      render();
+    });
+  };
+
+  if(editing){
+    el.querySelector('#i-supplier').value = editing.supplierId;
+  } else if(lastAddedSupplierId && suppliers.some(s=>s.id===lastAddedSupplierId)){
+    el.querySelector('#i-supplier').value = lastAddedSupplierId;
+    lastAddedSupplierId = null;
+  }
+
+  let photoData = editing ? (editing.photo || null) : null;
+  const fileInput = el.querySelector('#i-photo');
+  const fileDrop = el.querySelector('#fileDrop');
+  fileDrop.onclick = ()=> fileInput.click();
+  fileInput.onchange = ()=>{
+    const file = fileInput.files[0];
+    if(!file) return;
+    if(file.size > 4.5*1024*1024){
+      alert('Imagem muito grande. Escolha uma foto de até ~4MB.');
+      fileInput.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      photoData = reader.result;
+      el.querySelector('#fileDropText').textContent = '✓ ' + file.name;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  el.querySelector('#i-save').onclick = async ()=>{
+    const supplierId = el.querySelector('#i-supplier').value;
+    const valor = el.querySelector('#i-valor').value;
+    const data = el.querySelector('#i-data').value;
+    if(!supplierId || suppliers.length===0){ alert('Selecione um fornecedor.'); return; }
+    if(!valor){ alert('Informe o valor da despesa.'); return; }
+    const supplier = suppliers.find(s=>s.id===supplierId);
+    const fields = {
+      supplierId,
+      supplierName: supplier ? supplier.name : '',
+      valor: Number(valor),
+      data: data || new Date().toISOString().slice(0,10),
+      status: el.querySelector('#i-status').value,
+      desc: el.querySelector('#i-desc').value.trim(),
+      photo: photoData,
+    };
+    const list = state.invoicesByCompany[state.activeCompany] || (state.invoicesByCompany[state.activeCompany]=[]);
+    const btn = el.querySelector('#i-save');
+    btn.textContent = 'Salvando...';
+    if(editing){
+      const idx = list.findIndex(x=>x.id===editing.id);
+      if(idx>-1) list[idx] = Object.assign({}, list[idx], fields);
+      editingInvoiceId = null;
+    } else {
+      list.push(Object.assign({id: uid()}, fields));
+    }
+    await saveState();
+    render();
+  };
+
+  if(editing){
+    const cancelBtn = el.querySelector('#i-cancel');
+    if(cancelBtn) cancelBtn.onclick = ()=>{ editingInvoiceId=null; render(); };
+  }
+
+  const list = el.querySelector('#invoiceList');
+  if(invoices.length===0){
+    list.innerHTML = `<div class="empty-state"><h3>Nenhuma despesa registrada</h3><p>Registre a primeira despesa acima para começar o histórico desta empresa.</p></div>`;
+  } else {
+    invoices.slice().reverse().forEach(inv=>{
+      const card = document.createElement('div');
+      card.className = 'card invoice-card';
+      const thumb = inv.photo
+        ? `<img class="invoice-thumb" src="${inv.photo}">`
+        : `<div class="invoice-thumb placeholder">sem foto</div>`;
+      card.innerHTML = `
+        <span class="edit" title="Editar">✎</span>
+        <span class="del" title="Excluir">✕</span>
+        ${thumb}
+        <div class="invoice-main">
+          <div class="top-row">
+            <h4>${escapeHtml(inv.supplierName)}</h4>
+            <span class="valor mono">${fmtBRL(inv.valor)}</span>
+          </div>
+          <div class="meta">${fmtDate(inv.data)}</div>
+          ${inv.desc ? `<div class="desc">${escapeHtml(inv.desc)}</div>` : ''}
+        </div>
+        <span class="stamp ${inv.status}">${inv.status==='registrada'?'Registrada':'Pendente'}</span>
+      `;
+      card.querySelector('.edit').onclick = ()=>{
+        editingInvoiceId = inv.id;
+        render();
+      };
+      card.querySelector('.del').onclick = ()=>{
+        if(confirm('Remover esta despesa?')){
+          state.invoicesByCompany[state.activeCompany] = currentInvoices().filter(x=>x.id!==inv.id);
+          if(editingInvoiceId===inv.id) editingInvoiceId=null;
+          saveState(); render();
+        }
+      };
+      card.querySelector('.stamp').onclick = ()=>{
+        inv.status = inv.status==='registrada' ? 'pendente' : 'registrada';
+        saveState(); render();
+      };
+      list.appendChild(card);
+    });
+  }
+}
+
+/* ---------------- RELATÓRIOS (por empresa) ---------------- */
+let reportFrom = '';
+let reportTo = '';
+
+function renderRelatoriosPanel(el, invoices, suppliers, revenues){
+  const filtered = invoices.filter(inv=>{
+    if(reportFrom && inv.data < reportFrom) return false;
+    if(reportTo && inv.data > reportTo) return false;
+    return true;
+  });
+  const filteredRev = (revenues||[]).filter(rv=>{
+    if(reportFrom && rv.data < reportFrom) return false;
+    if(reportTo && rv.data > reportTo) return false;
+    return true;
+  });
+
+  const total = filtered.reduce((s,i)=>s+(Number(i.valor)||0),0);
+  const totalReceita = filteredRev.reduce((s,r)=>s+(Number(r.valor)||0),0);
+  const resultado = totalReceita - total;
+  const count = filtered.length;
+  const media = count ? total/count : 0;
+
+  // breakdown por fornecedor
+  const byName = {};
+  filtered.forEach(inv=>{
+    byName[inv.supplierName] = (byName[inv.supplierName]||0) + (Number(inv.valor)||0);
+  });
+  const supplierRows = Object.entries(byName).sort((a,b)=>b[1]-a[1]);
+  const maxSupplier = supplierRows.length ? supplierRows[0][1] : 1;
+
+  // breakdown por mês
+  const byMonth = {};
+  filtered.forEach(inv=>{
+    const key = (inv.data||'').slice(0,7); // YYYY-MM
+    byMonth[key] = (byMonth[key]||0) + (Number(inv.valor)||0);
+  });
+  const monthRows = Object.entries(byMonth).sort((a,b)=> a[0]<b[0]?1:-1);
+  const maxMonth = monthRows.length ? Math.max(...monthRows.map(r=>r[1])) : 1;
+
+  el.innerHTML = `
+    <div class="filter-row">
+      <div class="field"><label>De</label><input type="date" id="rep-from" value="${reportFrom}"></div>
+      <div class="field"><label>Até</label><input type="date" id="rep-to" value="${reportTo}"></div>
+      <button class="btn secondary" id="rep-clear" style="margin-top:0;">Limpar filtro</button>
+    </div>
+    <div class="summary-cards">
+      <div class="card summary-card"><div class="label">Receitas no período</div><div class="value" style="color:var(--ledger);">${fmtBRL(totalReceita)}</div></div>
+      <div class="card summary-card"><div class="label">Despesas no período</div><div class="value" style="color:var(--rust);">${fmtBRL(total)}</div></div>
+      <div class="card summary-card"><div class="label">Resultado</div><div class="value" style="color:${resultado>=0?'var(--ledger)':'var(--rust)'};">${fmtBRL(resultado)}</div></div>
+      <div class="card summary-card"><div class="label">Média por despesa</div><div class="value">${fmtBRL(media)}</div></div>
+    </div>
+
+    <div class="breakdown-title">Por fornecedor</div>
+    <div id="supplierBars">${supplierRows.length ? '' : '<div class="empty-state"><p style="margin:0;">Sem despesas no período selecionado.</p></div>'}</div>
+
+    <div class="breakdown-title">Por mês</div>
+    <div id="monthBars">${monthRows.length ? '' : '<div class="empty-state"><p style="margin:0;">Sem despesas no período selecionado.</p></div>'}</div>
+  `;
+
+  const supplierBars = el.querySelector('#supplierBars');
+  supplierRows.forEach(([name, val])=>{
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      <div class="bar-label">${escapeHtml(name)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(val/maxSupplier*100).toFixed(1)}%;"></div></div>
+      <div class="bar-value mono">${fmtBRL(val)}</div>`;
+    supplierBars.appendChild(row);
+  });
+
+  const monthBars = el.querySelector('#monthBars');
+  monthRows.forEach(([key, val])=>{
+    const [y,m] = key.split('-');
+    const label = m ? `${m}/${y}` : key;
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      <div class="bar-label">${label}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(val/maxMonth*100).toFixed(1)}%;"></div></div>
+      <div class="bar-value mono">${fmtBRL(val)}</div>`;
+    monthBars.appendChild(row);
+  });
+
+  el.querySelector('#rep-from').onchange = (e)=>{ reportFrom = e.target.value; render(); };
+  el.querySelector('#rep-to').onchange = (e)=>{ reportTo = e.target.value; render(); };
+  el.querySelector('#rep-clear').onclick = ()=>{ reportFrom=''; reportTo=''; render(); };
+}
+
+/* ---------------- VISÃO GERAL (todas as empresas) ---------------- */
+function renderOverview(main){
+  if(state.companies.length===0){
+    main.innerHTML = `
+      <div class="main-header">
+        <div><h2 class="display">Visão geral</h2><div class="sub">Comparativo entre todas as empresas</div></div>
+      </div>
+      <div class="empty-state">
+        <h3>Nenhuma empresa cadastrada</h3>
+        <p>Crie empresas na barra lateral para ver o comparativo aqui.</p>
+      </div>`;
+    return;
+  }
+
+  const rows = state.companies.map(c=>{
+    const invs = state.invoicesByCompany[c.id] || [];
+    const revs = state.revenuesByCompany[c.id] || [];
+    const totalDespesa = invs.reduce((s,i)=>s+(Number(i.valor)||0),0);
+    const totalReceita = revs.reduce((s,r)=>s+(Number(r.valor)||0),0);
+    const pendentes = invs.filter(i=>i.status==='pendente').length;
+    const supCount = (state.suppliersByCompany[c.id]||[]).length;
+    return { id:c.id, name:c.name, totalDespesa, totalReceita, resultado: totalReceita-totalDespesa, count:invs.length, revCount:revs.length, pendentes, supCount };
+  });
+
+  const grandDespesa = rows.reduce((s,r)=>s+r.totalDespesa,0);
+  const grandReceita = rows.reduce((s,r)=>s+r.totalReceita,0);
+  const grandResultado = grandReceita - grandDespesa;
+  const grandCount = rows.reduce((s,r)=>s+r.count,0);
+  const grandPend = rows.reduce((s,r)=>s+r.pendentes,0);
+
+  main.innerHTML = `
+    <div class="main-header">
+      <div><h2 class="display">Visão geral</h2><div class="sub">Comparativo entre todas as empresas</div></div>
+    </div>
+    <div class="overview-grid">
+      <div class="card overview-card"><h4>Receitas</h4><div class="big" style="color:var(--ledger);">${fmtBRL(grandReceita)}</div><div class="small">Somando todas as empresas</div></div>
+      <div class="card overview-card"><h4>Despesas</h4><div class="big" style="color:var(--rust);">${fmtBRL(grandDespesa)}</div><div class="small">${grandCount} registro(s) · ${grandPend} pendente(s)</div></div>
+      <div class="card overview-card"><h4>Resultado</h4><div class="big" style="color:${grandResultado>=0?'var(--ledger)':'var(--rust)'};">${fmtBRL(grandResultado)}</div><div class="small">Receitas − despesas</div></div>
+    </div>
+
+    <div class="breakdown-title">Despesas x resultado, por empresa</div>
+    <div class="pie-grid" id="pieGrid"></div>
+
+    <div class="breakdown-title">Por empresa</div>
+    <div class="card" style="padding:6px 20px;">
+      <table class="compare-table">
+        <thead><tr><th>Empresa</th><th>Receitas</th><th>Despesas</th><th>Resultado</th><th>Pendentes</th></tr></thead>
+        <tbody>
+          ${rows.map(r=>`<tr>
+            <td>${escapeHtml(r.name)}</td>
+            <td class="mono">${fmtBRL(r.totalReceita)}</td>
+            <td class="mono">${fmtBRL(r.totalDespesa)}</td>
+            <td class="mono" style="color:${r.resultado>=0?'var(--ledger)':'var(--rust)'};">${fmtBRL(r.resultado)}</td>
+            <td>${r.pendentes}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const pieGrid = main.querySelector('#pieGrid');
+  rows.forEach(r=>{
+    const card = document.createElement('div');
+    card.className = 'card pie-card';
+    let pieStyle, legendHtml;
+    if(r.totalReceita <= 0){
+      pieStyle = 'background:var(--paper-2);';
+      legendHtml = `<div class="pie-legend"><span style="color:var(--muted);">Sem receita registrada no período</span></div>`;
+    } else {
+      const despesaPct = Math.min(r.totalDespesa / r.totalReceita, 1) * 100;
+      pieStyle = `background: conic-gradient(var(--rust) 0% ${despesaPct.toFixed(1)}%, var(--ledger) ${despesaPct.toFixed(1)}% 100%);`;
+      legendHtml = `
+        <div class="pie-legend">
+          <span><span class="dot" style="background:var(--rust);"></span>Despesas — ${fmtBRL(r.totalDespesa)}</span>
+          <span><span class="dot" style="background:var(--ledger);"></span>Resultado — ${fmtBRL(r.resultado)}</span>
+          <div class="result-line" style="color:${r.resultado>=0?'var(--ledger)':'var(--rust)'};">
+            ${r.resultado>=0 ? 'Lucro' : 'Prejuízo'}: ${fmtBRL(Math.abs(r.resultado))}
+          </div>
+        </div>`;
+      if(r.totalDespesa > r.totalReceita){
+        legendHtml += `<div style="font-size:11.5px;color:var(--muted);margin-top:4px;">Despesas superam as receitas — o círculo fica todo vermelho pois não há espaço para o excedente.</div>`;
+      }
+    }
+    card.innerHTML = `
+      <div class="pie" style="${pieStyle}"></div>
+      <div class="pie-info">
+        <h4>${escapeHtml(r.name)}</h4>
+        ${legendHtml}
+      </div>`;
+    pieGrid.appendChild(card);
+  });
+}
+
+</script>
+</body>
+</html>
