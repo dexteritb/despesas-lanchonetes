@@ -121,6 +121,7 @@
     text-align:left;
   }
   .add-company-btn:hover{ border-color:var(--gold); color:var(--gold); }
+  .cleanup-btn:hover{ border-color:var(--rust); color:#E58A77; }
   .sidebar-foot{
     margin-top:auto;
     font-size:11px;
@@ -464,6 +465,17 @@
     font-family:inherit;
   }
   .modal-actions{ display:flex; gap:8px; justify-content:flex-end; }
+  .modal.cleanup{ width:380px; max-width:calc(100vw - 32px); }
+  .modal.cleanup .field{ margin-bottom:12px; }
+  .modal.cleanup .field input{ margin-bottom:0; }
+  .modal .check{ display:flex; align-items:center; gap:8px; font-size:13.5px; margin-bottom:8px; cursor:pointer; }
+  .modal .check input{ width:auto; margin:0; }
+  .cleanup-note{ font-size:12.5px; color:var(--muted); line-height:1.5; margin:4px 0 0; }
+  .cleanup-preview{ font-size:13px; font-weight:600; line-height:1.5; margin:10px 0 0; color:var(--ink); }
+  .cleanup-preview.danger{ color:var(--rust); }
+  .btn.danger{ background:var(--rust); }
+  .btn.danger:hover{ background:#9C3B29; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
 
   @media (max-width:760px){
     .app{ flex-direction:column; }
@@ -498,6 +510,7 @@
     <div class="companies-label">Empresas</div>
     <div class="company-list" id="companyList"></div>
     <button class="add-company-btn" id="addCompanyBtn">+ Nova empresa</button>
+    <button class="add-company-btn cleanup-btn" id="cleanupBtn">Limpar dados antigos</button>
     <div class="sidebar-foot">Cada empresa tem seus próprios fornecedores e despesas. Os dados ficam salvos automaticamente neste navegador.<br><span class="logout-btn" id="logoutBtn">Sair</span></div>
   </div>
 
@@ -696,6 +709,96 @@ document.getElementById('addCompanyBtn').onclick = ()=>{
     state.activeCompany = id;
     saveState(); render();
   });
+};
+
+/* ---------------- LIMPEZA POR DATA ---------------- */
+function downloadBackup(){
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `backup-despesas-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+
+function cleanupMatches(scope, until, withInvoices, withRevenues){
+  const inRange = x => !!until && !!x.data && x.data <= until;
+  const companies = scope==='ALL' ? state.companies : state.companies.filter(c=>c.id===scope);
+  const invoices = withInvoices ? companies.flatMap(c=>(state.invoicesByCompany[c.id]||[]).filter(inRange)) : [];
+  const revenues = withRevenues ? companies.flatMap(c=>(state.revenuesByCompany[c.id]||[]).filter(inRange)) : [];
+  return { companies, invoices, revenues, inRange };
+}
+
+document.getElementById('cleanupBtn').onclick = ()=>{
+  const defaultScope = state.companies.some(c=>c.id===state.activeCompany) ? state.activeCompany : 'ALL';
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal cleanup">
+      <h3>Limpar dados antigos</h3>
+      <div class="field">
+        <label for="cl-scope">Empresa</label>
+        <select id="cl-scope">
+          <option value="ALL">Todas as empresas</option>
+          ${state.companies.map(c=>`<option value="${escapeHtml(c.id)}" ${c.id===defaultScope?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label for="cl-date">Excluir registros até a data (inclusive)</label>
+        <input type="date" id="cl-date">
+      </div>
+      <label class="check"><input type="checkbox" id="cl-inv" checked> Despesas</label>
+      <label class="check"><input type="checkbox" id="cl-rev" checked> Receitas</label>
+      <p class="cleanup-note">Fornecedores e empresas não são excluídos. Uma cópia de segurança será baixada antes da limpeza.</p>
+      <p class="cleanup-preview" id="cl-preview"></p>
+      <div class="modal-actions">
+        <button class="btn secondary" id="cl-cancel">Cancelar</button>
+        <button class="btn danger" id="cl-ok" disabled>Excluir</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+
+  const scopeEl = bg.querySelector('#cl-scope');
+  const dateEl = bg.querySelector('#cl-date');
+  const invEl = bg.querySelector('#cl-inv');
+  const revEl = bg.querySelector('#cl-rev');
+  const previewEl = bg.querySelector('#cl-preview');
+  const okBtn = bg.querySelector('#cl-ok');
+  const matches = ()=>cleanupMatches(scopeEl.value, dateEl.value, invEl.checked, revEl.checked);
+
+  function updatePreview(){
+    const { invoices, revenues } = matches();
+    const total = invoices.length + revenues.length;
+    const pendentes = invoices.filter(i=>i.status==='pendente').length;
+    okBtn.disabled = total===0;
+    previewEl.classList.toggle('danger', total>0);
+    if(!dateEl.value){ previewEl.textContent = 'Escolha uma data para ver o que será excluído.'; return; }
+    previewEl.textContent = total===0
+      ? 'Nenhum registro encontrado até essa data.'
+      : `Serão excluídas ${invoices.length} despesa(s) e ${revenues.length} receita(s).` + (pendentes ? ` Atenção: ${pendentes} despesa(s) ainda pendente(s).` : '');
+  }
+  [scopeEl, dateEl, invEl, revEl].forEach(el=>{ el.onchange = updatePreview; });
+  dateEl.oninput = updatePreview;
+  updatePreview();
+
+  bg.querySelector('#cl-cancel').onclick = ()=> bg.remove();
+  okBtn.onclick = async ()=>{
+    const { companies, invoices, revenues, inRange } = matches();
+    if(!invoices.length && !revenues.length){ updatePreview(); return; }
+    const scopeName = scopeEl.value==='ALL' ? 'todas as empresas' : `"${companies[0].name}"`;
+    if(!confirm(`Excluir definitivamente ${invoices.length} despesa(s) e ${revenues.length} receita(s) até ${fmtDate(dateEl.value)} de ${scopeName}?\n\nEssa ação não pode ser desfeita no sistema.`)) return;
+    downloadBackup();
+    companies.forEach(c=>{
+      if(invEl.checked) state.invoicesByCompany[c.id] = (state.invoicesByCompany[c.id]||[]).filter(i=>!inRange(i));
+      if(revEl.checked) state.revenuesByCompany[c.id] = (state.revenuesByCompany[c.id]||[]).filter(r=>!inRange(r));
+    });
+    bg.remove();
+    resetEditing();
+    await saveState();
+    render();
+  };
 };
 
 function openModal(title, placeholder, onSubmit){
